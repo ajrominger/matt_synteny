@@ -1,0 +1,200 @@
+---
+title: "Synteny decay rate analysis"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+```
+
+## Regression model methods
+
+We would like to know how synteny decays with phylogenetic distance and if different orders show different patterns of decay.  We will evaluate whether the decay in synteny is best fit by a linear, exponential, or power law relationship with phylogenetic distance using least squares regression models.  However, because the pairwise distances (both along phylogenetic branches and in genomic position of genes) violate the independence assumptions of ordinary least squares regression models, we will use a permutational approach to evaluate the significance of the regression models we fit.  This approach is consistent with widespread methods in ecology and evolution that preform regression analyses with distance matrices [@MRM].
+
+### Permutational algorithm
+
+We implement this permutational approach using a custom algorithm in the R programming language [@RCore]. We use a custom algorithm because our analytical set-up is slightly different than other approaches [e.g., @MRM; @harmon; @mdmr]. Unline existing approaches we are not making all pairwise comparisons, but rather only comparisons within orders (not across orders); we are also interested in the effect of one distance matrix (phylogeny) on another distance matrix (synteny) in combination with a categorical factor (taxonomic order).
+
+We are forced to take a permuational approach because synteny can only be quantified in a pairwise fashion, obviating other methods such as independent contrasts [@harmon].  We use a simple permutation algorithm that does not take into account phylogenetic branch lengths [unlike, e.g., @harmon; @otherDude] because phylogenetic distance is a key explanatory variable and constraining it in the permutations would lead to nonsensical null distributions.  Our permutational algorithm leaves the structure of the phylogeny taxonomic classifications unaltered while permuting levels of divergence in synteny across the tips.
+
+We evaluate which model (linear, exponential, or power law) best fits the data using a permuational estimate of the $F$ statistic (i.e. the ratio of variance explained by the model versus residual variance) and its deviation from the null.  We use the $F$ statistic instead of AIC or BIC because these information theoretic and Bayesian model comparison criteria have been shown to preform poorly in distance matrix regression settings [@dude].  Similarly, to evaluate whether orders have different rates of decay in synteny we again use permutational tests based on $F$ statistics.  The code implementing our permutational algorithm is reproduced below.
+
+```{r sourceFun, code=readLines('R/syntPermAOV.R')}
+```
+
+
+We validate our code by comparing our calculations to standard R functions using simulated data, reproduced below.
+
+```{r permAOV_test, dependson='sourceFun'}
+x <- runif(500)
+g <- rep(1:4, 25)
+y <- g^3 + 5 * g * x + rnorm(100, sd = 2)
+
+m <- lm(y ~ x * g, data = data.frame(y = y, x = x, g = factor(g)))
+
+syntPermAOV(x, y, g, B = 999)
+anova(m)
+summary(m)[['fstatistic']]
+```
+
+The degrees of freedom and $F$-statistics all agree.  The p-values differ in magnitude (but not in significance) but this discrepancy is to be expected when using finite permutations.
+
+
+### Analysis of synteny across phylogenetic distance and orders
+
+We can now analyze how synteny decays with phylogenetic distance, and whether different orders behave differently.  The code to run this analysis is reproduced below. 
+
+```{r makeMods, dependson='sourceFun'}
+# phylogenetic distances
+treeD <- read.csv("data/rescaled_tree_insecta6.csv",
+                  header = TRUE, row.names = 1)
+
+# synteny distances
+syntD <- read.table("data/Insecta_matrix_matched_to_phylo_mod3.txt",
+                   header = TRUE, row.names = 1)
+
+# map of location of orders in distance matrices
+taxaii <- data.frame(ord = c('Hemiptera', 'Hymenoptera', 'Coleoptera',
+                             'Diptera', 'Lepidoptera'),
+                     i0 = c(2, 16, 42, 49, 65),
+                     i1 = c(14, 40, 48, 64, 143))
+
+# function to etract lower triangles for a given order
+getLowerTri <- function(ord) {
+    o <- which(taxaii$ord == ord)
+    ii <- taxaii$i0[o]:taxaii$i1[o]
+
+    mt <- treeD[ii, ii]
+    ms <- syntD[ii, ii]
+
+    return(data.frame(ord = ord,
+                      treeD = mt[lower.tri(mt)],
+                      syntD = ms[lower.tri(ms)]))
+}
+
+
+# make data.frame with all data on distances and grouops
+ordDat <- lapply(taxaii$ord, getLowerTri)
+ordDat <- do.call(rbind, ordDat)
+
+
+# make three different models: linear, exponential, power law
+
+# linear
+yLin <- ordDat$syntD
+xLin <- ordDat$treeD
+ord <- ordDat$ord
+modLin <- syntPermAOV(xLin, yLin, ord, B = 9999) 
+
+# exponential
+yExp <- log(ordDat$syntD)
+modExp <- syntPermAOV(xLin, yExp, ord, B = 9999)
+
+# power law
+xExp <- log(ordDat$treeD)
+modPow <- syntPermAOV(xExp, yExp, ord, B = 9999)
+```
+
+Because Lepidoptera represent the majority of data ($n$ = `r format(sum(ord == 'Lepidoptera'), big.mark = ',')` out of `r format(length(ord), big.mark = ',')` total data points), we also analyze the relationship between synteny and phylogenetic distance in the subset of data excluding Lepidoptera.  We do this only with the exponential model as this proved to be the best fitting model (see results section).  The code to reproduce this analysis without Lepidoptera is below.
+
+```{r noLeps, dependson='sourceFun'}
+modExpNoLep <- syntPermAOV(xLin[ord != 'Lepidoptera'], 
+                           yExp[ord != 'Lepidoptera'], 
+                           ord[ord != 'Lepidoptera'], 
+                           B = 9999)
+```
+
+## Regression model results
+
+```{r dfMod, echo=FALSE, cache=FALSE}
+dfExp <- modExp$DF[4]
+dfLin <- modLin$DF[4]
+dfPow <- modPow$DF[4]
+```
+
+The exponential decay model has the highest total model $F$-statistic at and smallest $p$-value $F_{`r dfExp`}$ = `r format(modExp$FVal[4], big.mark = ',', digits = 2)`, $p$ = `r round(modExp$Pval[4], 4)` (compared to linear: $F_{`r dfLin`}$ = `r format(modLin$FVal[4], big.mark = ',', digits = 2)`, $p$ = `r round(modLin$Pval[4], 4)`; power law: $F_{`r dfPow`}$ = `r format(modPow$FVal[4], big.mark = ',', digits = 2)`, $p$ = `r round(modPow$Pval[4], 4)`). This supports the exponential model as the best fitting model for the relationship between synteny and phylogenetic distance. 
+
+```{r dfOrd, echo=FALSE, cache=FALSE}
+dfOrd <- modExp$DF[3]
+dfOrdNoLep <- modExpNoLep$DF[3]
+```
+
+Using this best fitting exponential model we can now ask whether different orders show different rates of decay, again using permutational $F$-statistics. We find that the interaction between phylogenetic distance and order identity is statistically significant: $F_{`r dfOrd`}$ = `r format(modExp$FVal[3], big.mark = ',', digits = 2)`, $p$ = `r round(modExp$Pval[3], 4)`.  We also find that this result is not driven soley by Lepidoptera; the analysis excluding Lepidoptera still finds a significant interaction between phylogenetic distance and order: $F_{`r dfOrdNoLep`}$ = `r format(modExpNoLep$FVal[3], big.mark = ',', digits = 2)`, $p$ = `r round(modExpNoLep$Pval[3], 4)`.
+
+
+Finally, we can make a plot of the data and the best fitting exponential model, shown in Figure \ref{fig:synt} with code reproduced below. Note that because the best model is exponential we plot the data with a log-transformed y-axis.
+
+```{r fig_syntByPhyOrd, fig.width = 4, fig.height = 4, fig.cap = 'Relationship between synteny and phylogenetic distance across different insect orders. Lines show the best-fitting exponential decay model. Note the log-transformed y-axis. \\label{fig:synt}'}
+# load a custom library with a function for making pretty log axes
+s <- require(socorro)
+if(!s) {
+    devtools::install_github('ajrominger/socorro')
+    library(socorro)
+}
+
+# the model fit by `syntPermAOV` has the same parameter values as given by `lm`
+# so we can use the functionality of `lm` to plot predictions
+
+mod <- lm(y ~ x * g, data = data.frame(x = xLin, y = yExp, g = ord))
+
+# make uniform predictor variables for prediction
+uniqueOrd <- sort(unique(ord))
+xnew <- lapply(uniqueOrd, function(o) {
+    xr <- range(xLin[ord == o])
+    out <- data.frame(x = seq(xr[1], xr[2], length.out = 50), 
+                      g = o)
+    
+    return(out)
+})
+
+xnew <- do.call(rbind, xnew)
+
+# xnew <- expand.grid(x = seq(min(xLin), max(xLin), 
+#                             length.out = 100 * length(uniqueOrd)), 
+#                     g = uniqueOrd)
+
+# custom function to draw predicted curves
+syntCurve <- function(ord, ...) {
+    thisx <- xnew[xnew$g == ord, ]
+    thisy <- exp(predict(mod, thisx))
+    
+    lines(thisx$x, thisy, col = factor(ord, levels = uniqueOrd), ...)
+}
+
+# a nice color palette
+pal <- list(h = c(1, 0.02, 0.78, 0.6, 0.5), 
+            s = c(0, 0.70, 1.00, 1, 1), 
+            v = c(0, 0.80, 0.90, 1, 1))
+
+padj <- 0.8
+palette(hsv(pal$h, pal$s * padj, pal$v))
+
+# the plot
+par(mar = c(3, 3, 0, 0) + 0.25, mgp = c(2, 0.5, 0), tcl = -0.25)
+
+plot(xLin, yLin, col = factor(ord), lwd = 1.5, 
+     xlab = 'Rescaled phylogenetic distance', 
+     ylab = 'Rescaled synteny distance', 
+     log = 'y', yaxt = 'n', 
+     ylim = c(10, 10^4))
+
+logAxis(2, expLab = TRUE)
+
+# add legend
+legend('topright', legend = uniqueOrd, x.intersp = 1.5,
+       col = factor(uniqueOrd), pch = 1, pt.lwd = 1.5, pt.cex = 1.2,
+       bty = 'n')
+
+# add lines
+ladj <- 0.8
+palette(hsv(pal$h, pal$s, pal$v * ladj))
+for(o in uniqueOrd) {
+    syntCurve(o, lwd = 3)
+}
+
+# add lines to legend
+legend('topright', legend = uniqueOrd, text.col = 'transparent',
+       col = factor(uniqueOrd), lty = 1, lwd = 3, seg.len = 1,
+       bty = 'n')
+```
+
