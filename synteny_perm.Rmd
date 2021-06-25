@@ -15,11 +15,11 @@ We would like to know how synteny decays with phylogenetic distance and if diffe
 
 ### Permutational algorithm
 
-We implement this permutational approach using a custom algorithm in the R programming language [@RCore]. We use a custom algorithm because our analytical set-up is slightly different than other approaches [e.g., @lichstein2007; @harmon2010; @mdmr]. Unline existing approaches we are not making all pairwise comparisons, but rather only comparisons within orders (not across orders); we are also interested in the effect of one distance matrix (phylogeny) on another distance matrix (synteny) in combination with a categorical factor (taxonomic order).
+We implement this permutational approach using a custom algorithm in the R programming language [@RCore]. We use a custom algorithm because our analytical set-up is slightly different than other approaches [e.g., @lichstein2007; @harmon2010; @mdmr]. Unlike existing approaches we are not making all pairwise comparisons, but rather only comparisons within orders (not across orders); we are also interested in the effect of one distance matrix (phylogeny) on another distance matrix (synteny) in combination with a categorical factor (taxonomic order).
 
-We are forced to take a permuational approach because synteny can only be quantified in a pairwise fashion, obviating other methods such as independent contrasts [@harmon2010].  We use a simple permutation algorithm that does not take into account phylogenetic branch lengths [unlike, e.g., @harmon2010; @lapointe2001] because phylogenetic distance is a key explanatory variable and constraining it in the permutations would lead to nonsensical null distributions.  Our permutational algorithm leaves the structure of the phylogeny taxonomic classifications unaltered while permuting levels of divergence in synteny across the tips.
+We are forced to take a permutational approach because synteny can only be quantified in a pairwise fashion, obviating other methods such as independent contrasts [@harmon2010].  We use a simple permutation algorithm that does not take into account phylogenetic branch lengths [unlike e.g., @harmon2010; @lapointe2001] because phylogenetic distance is a key explanatory variable and constraining it in the permutations would lead to nonsensical null distributions.  Our permutational algorithm leaves the structure of the phylogeny taxonomic classifications unaltered while permuting levels of divergence in synteny across the tips.
 
-We evaluate which model (linear, exponential, or power law) best fits the data using a permuational estimate of the $F$ statistic (i.e. the ratio of variance explained by the model versus residual variance) and its deviation from the null.  We use the $F$ statistic instead of AIC or BIC because these information theoretic and Bayesian model comparison criteria have been shown to preform poorly in distance matrix regression settings [@franckowiak2017].  Similarly, to evaluate whether orders have different rates of decay in synteny we again use permutational tests based on $F$ statistics.  The code implementing our permutational algorithm is reproduced below.
+We evaluate which model (linear, exponential, or power law) best fits the data using a permutational estimate of the $F$ statistic (i.e. the ratio of variance explained by the model versus residual variance) and its deviation from the null.  We use the $F$ statistic instead of AIC or BIC because these information theoretic and Bayesian model comparison criteria have been shown to preform poorly in distance matrix regression settings [@franckowiak2017].  Similarly, to evaluate whether orders have different rates of decay in synteny we again use permutational tests based on $F$ statistics.  The code implementing our permutational algorithm is reproduced below.
 
 ```{r sourceFun, code=readLines('R/syntPermAOV.R')}
 ```
@@ -61,7 +61,7 @@ taxaii <- data.frame(ord = c('Hemiptera', 'Hymenoptera', 'Coleoptera',
                      i0 = c(2, 16, 42, 49, 65),
                      i1 = c(14, 40, 48, 64, 143))
 
-# function to etract lower triangles for a given order
+# function to extract lower triangles for a given order
 getLowerTri <- function(ord) {
     o <- which(taxaii$ord == ord)
     ii <- taxaii$i0[o]:taxaii$i1[o]
@@ -75,7 +75,7 @@ getLowerTri <- function(ord) {
 }
 
 
-# make data.frame with all data on distances and grouops
+# make data.frame with all data on distances and groups
 ordDat <- lapply(taxaii$ord, getLowerTri)
 ordDat <- do.call(rbind, ordDat)
 
@@ -114,14 +114,14 @@ dfLin <- modLin$DF[4]
 dfPow <- modPow$DF[4]
 ```
 
-The exponential decay model has the highest total model $F$-statistic at and smallest $p$-value $F_{`r dfExp`}$ = `r format(modExp$FVal[4], big.mark = ',', digits = 2)`, $p$ = `r round(modExp$Pval[4], 4)` (compared to linear: $F_{`r dfLin`}$ = `r format(modLin$FVal[4], big.mark = ',', digits = 2)`, $p$ = `r round(modLin$Pval[4], 4)`; power law: $F_{`r dfPow`}$ = `r format(modPow$FVal[4], big.mark = ',', digits = 2)`, $p$ = `r round(modPow$Pval[4], 4)`). This supports the exponential model as the best fitting model for the relationship between synteny and phylogenetic distance. 
+The exponential decay model has the highest total model $F$-statistic and smallest $p$-value $F_{`r dfExp`}$ = `r format(modExp$FVal[4], big.mark = ',', digits = 2)`, $p$ = `r round(modExp$Pval[4], 4)` (compared to linear: $F_{`r dfLin`}$ = `r format(modLin$FVal[4], big.mark = ',', digits = 2)`, $p$ = `r round(modLin$Pval[4], 4)`; power law: $F_{`r dfPow`}$ = `r format(modPow$FVal[4], big.mark = ',', digits = 2)`, $p$ = `r round(modPow$Pval[4], 4)`). This supports the exponential model as the best fitting model for the relationship between synteny and phylogenetic distance. 
 
 ```{r dfOrd, echo=FALSE, cache=FALSE}
 dfOrd <- modExp$DF[3]
 dfOrdNoLep <- modExpNoLep$DF[3]
 ```
 
-Using this best fitting exponential model we can now ask whether different orders show different rates of decay, again using permutational $F$-statistics. We find that the interaction between phylogenetic distance and order identity is statistically significant: $F_{`r dfOrd`}$ = `r format(modExp$FVal[3], big.mark = ',', digits = 2)`, $p$ = `r round(modExp$Pval[3], 4)`.  We also find that this result is not driven soley by Lepidoptera; the analysis excluding Lepidoptera still finds a significant interaction between phylogenetic distance and order: $F_{`r dfOrdNoLep`}$ = `r format(modExpNoLep$FVal[3], big.mark = ',', digits = 2)`, $p$ = `r round(modExpNoLep$Pval[3], 4)`.
+Using this best fitting exponential model we can now ask whether different orders show different rates of decay, again using permutational $F$-statistics. We find that the interaction between phylogenetic distance and order identity is statistically significant: $F_{`r dfOrd`}$ = `r format(modExp$FVal[3], big.mark = ',', digits = 2)`, $p$ = `r round(modExp$Pval[3], 4)`.  We also find that this result is not driven solely by Lepidoptera; the analysis excluding Lepidoptera still finds a significant interaction between phylogenetic distance and order: $F_{`r dfOrdNoLep`}$ = `r format(modExpNoLep$FVal[3], big.mark = ',', digits = 2)`, $p$ = `r round(modExpNoLep$Pval[3], 4)`.
 
 
 Finally, we can make a plot of the data and the best fitting exponential model, shown in Figure \ref{fig:synt} with code reproduced below. Note that because the best model is exponential we plot the data with a log-transformed y-axis.
@@ -151,9 +151,6 @@ xnew <- lapply(uniqueOrd, function(o) {
 
 xnew <- do.call(rbind, xnew)
 
-# xnew <- expand.grid(x = seq(min(xLin), max(xLin), 
-#                             length.out = 100 * length(uniqueOrd)), 
-#                     g = uniqueOrd)
 
 # custom function to draw predicted curves
 syntCurve <- function(ord, ...) {
